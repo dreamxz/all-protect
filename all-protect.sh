@@ -4,29 +4,35 @@
 # 🛡️ PTERODACTYL ALL-IN-ONE PROTECT INSTALLER
 # ============================================
 
-DB="panel"
 DB_USER="root"
-ADMIN_ID=1
 PANEL_DIR="/var/www/pterodactyl"
+ENV_FILE="$PANEL_DIR/.env"
 
-# Cek apakah root
-if [[ "$EUID" -ne 0 ]]; then
-  echo "❌ Jalankan sebagai root!"
+# Ambil nama database dari .env
+if [[ ! -f "$ENV_FILE" ]]; then
+  echo "❌ Tidak bisa menemukan file .env di $PANEL_DIR"
   exit 1
 fi
 
-echo "🚀 Memulai instalasi semua proteksi ke panel Pterodactyl..."
+DB=$(grep DB_DATABASE "$ENV_FILE" | cut -d '=' -f2)
+
+if [[ -z "$DB" ]]; then
+  echo "❌ Tidak bisa membaca nama database dari .env"
+  exit 1
+fi
+
+ADMIN_ID=1
+
+echo "📦 Menggunakan database: $DB"
 
 # ===============================
 # 1. ANTI DELETE USER & SERVER
 # ===============================
 echo "🔐 Memasang Anti-Delete User & Server..."
-
 mysql -u $DB_USER <<EOF
 USE $DB;
 DROP TRIGGER IF EXISTS prevent_user_delete;
 DROP TRIGGER IF EXISTS prevent_server_delete;
-
 DELIMITER $$
 CREATE TRIGGER prevent_user_delete
 BEFORE DELETE ON users
@@ -37,7 +43,6 @@ BEGIN
     SET MESSAGE_TEXT = '❌ Hanya admin utama yang boleh hapus user!';
   END IF;
 END$$
-
 CREATE TRIGGER prevent_server_delete
 BEFORE DELETE ON servers
 FOR EACH ROW
@@ -54,11 +59,9 @@ EOF
 # 2. ANTI DELETE NODE
 # ===============================
 echo "🛑 Memasang Anti-Delete Node..."
-
 mysql -u $DB_USER <<EOF
 USE $DB;
 DROP TRIGGER IF EXISTS prevent_node_delete;
-
 DELIMITER $$
 CREATE TRIGGER prevent_node_delete
 BEFORE DELETE ON nodes
@@ -76,11 +79,9 @@ EOF
 # 3. ANTI DELETE EGG
 # ===============================
 echo "🥚 Memasang Anti-Delete Egg..."
-
 mysql -u $DB_USER <<EOF
 USE $DB;
 DROP TRIGGER IF EXISTS prevent_egg_delete;
-
 DELIMITER $$
 CREATE TRIGGER prevent_egg_delete
 BEFORE DELETE ON eggs
@@ -98,11 +99,9 @@ EOF
 # 4. ANTI EDIT SETTINGS
 # ===============================
 echo "⚙️ Memasang Anti-Edit Settings..."
-
 mysql -u $DB_USER <<EOF
 USE $DB;
 DROP TRIGGER IF EXISTS prevent_setting_edit;
-
 DELIMITER $$
 CREATE TRIGGER prevent_setting_edit
 BEFORE UPDATE ON settings
@@ -110,14 +109,14 @@ FOR EACH ROW
 BEGIN
   IF (SELECT id FROM users WHERE id = NEW.updated_by) != $ADMIN_ID THEN
     SIGNAL SQLSTATE '45000'
-    SET MESSAGE_TEXT = '❌ Hanya admin utama yang boleh ubah pengaturan!';
+    SET MESSAGE_TEXT = '❌ Hanya admin utama yang boleh ubah setting!';
   END IF;
 END$$
 DELIMITER ;
 EOF
 
 # ===============================
-# 5. ANTI INTIP PANEL
+# 5. ANTI INTIP PANEL (FILE)
 # ===============================
 echo "🕶️ Memasang Anti-Intip Panel..."
 
@@ -138,13 +137,10 @@ if [[ -d "$PANEL_DIR" ]]; then
 
   echo "✅ Anti-intip berhasil dipasang!"
 else
-  echo "❌ Folder panel tidak ditemukan di: $PANEL_DIR"
+  echo "❌ Folder panel tidak ditemukan: $PANEL_DIR"
 fi
 
-# ===============================
-# SELESAI
-# ===============================
 echo ""
-echo "✅ Semua proteksi telah berhasil dipasang!"
-echo "📌 Jalankan ini untuk menyegarkan cache Laravel:"
+echo "✅ Semua proteksi berhasil dipasang!"
+echo "📌 Jalankan ini untuk menyegarkan Laravel:"
 echo "   php artisan config:clear && php artisan cache:clear"
